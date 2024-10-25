@@ -18,13 +18,20 @@ class SpikeGLXConverterPipe(ConverterPipe):
 
     display_name = "SpikeGLX Converter"
     keywords = SpikeGLXRecordingInterface.keywords + SpikeGLXNIDQInterface.keywords
-    associated_suffixes = SpikeGLXRecordingInterface.associated_suffixes + SpikeGLXNIDQInterface.associated_suffixes
+    associated_suffixes = (
+        SpikeGLXRecordingInterface.associated_suffixes
+        + SpikeGLXNIDQInterface.associated_suffixes
+    )
     info = "Converter for multi-stream SpikeGLX recording data."
 
     @classmethod
     def get_source_schema(cls):
-        source_schema = get_schema_from_method_signature(method=cls.__init__, exclude=["streams"])
-        source_schema["properties"]["folder_path"]["description"] = "Path to the folder containing SpikeGLX streams."
+        source_schema = get_schema_from_method_signature(
+            method=cls.__init__, exclude=["streams"]
+        )
+        source_schema["properties"]["folder_path"]["description"] = (
+            "Path to the folder containing SpikeGLX streams."
+        )
         return source_schema
 
     @classmethod
@@ -64,31 +71,38 @@ class SpikeGLXConverterPipe(ConverterPipe):
         streams = streams or self.get_streams(folder_path=folder_path)
 
         data_interfaces = dict()
+        probe_names = [p.stem for p in folder_path.iterdir() if p.is_dir()]
         for stream in streams:
+            probe_index = int(stream.split(".")[0][-1])
+            probe_name = f"probe{probe_index:02}"  # this is IBL specific
+            probe_folder = folder_path / probe_name
             if "ap" in stream:
-                probe_name = stream[:5]
-                file_path = (
-                    folder_path / f"{folder_path.stem}_{probe_name}" / f"{folder_path.stem}_t0.{probe_name}.ap.bin"
-                )
+                file_path = list(probe_folder.glob("*.ap.bin"))[0]
                 es_key = f"ElectricalSeriesAP{probe_name.capitalize()}"
-                interface = SpikeGLXRecordingInterface(file_path=file_path, es_key=es_key)
-            elif "lf" in stream:
-                probe_name = stream[:5]
-                file_path = (
-                    folder_path / f"{folder_path.stem}_{probe_name}" / f"{folder_path.stem}_t0.{probe_name}.lf.bin"
+                interface = SpikeGLXRecordingInterface(
+                    file_path=file_path, es_key=es_key
                 )
+            elif "lf" in stream:
+                file_path = list(probe_folder.glob("*.lf.bin"))[0]
                 es_key = f"ElectricalSeriesLF{probe_name.capitalize()}"
-                interface = SpikeGLXRecordingInterface(file_path=file_path, es_key=es_key)
+                interface = SpikeGLXRecordingInterface(
+                    file_path=file_path, es_key=es_key
+                )
             elif "nidq" in stream:
                 file_path = folder_path / f"{folder_path.stem}_t0.nidq.bin"
                 interface = SpikeGLXNIDQInterface(file_path=file_path)
-            data_interfaces.update({str(stream): interface})  # Without str() casting, is a numpy string
+            data_interfaces.update(
+                {str(stream): interface}
+            )  # Without str() casting, is a numpy string
 
         super().__init__(data_interfaces=data_interfaces, verbose=verbose)
 
     def get_conversion_options_schema(self) -> dict:
         conversion_options_schema = super().get_conversion_options_schema()
         conversion_options_schema["properties"].update(
-            {name: interface.get_conversion_options_schema() for name, interface in self.data_interface_objects.items()}
+            {
+                name: interface.get_conversion_options_schema()
+                for name, interface in self.data_interface_objects.items()
+            }
         )
         return conversion_options_schema
